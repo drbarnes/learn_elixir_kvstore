@@ -23,4 +23,13 @@ defmodule BucketRegistryTest do
     end
   end
 
+
+  test "ensure registry entry removed on bucket crash", %{registry: registry} do
+    {:ok, bucket} = Registry.create(registry, "test")
+    {:ok, pid} = Registry.lookup(registry, "test")
+    assert bucket == pid
+    Agent.stop(bucket)
+    assert Registry.lookup(registry, "test") == :error
+  end
+
 end

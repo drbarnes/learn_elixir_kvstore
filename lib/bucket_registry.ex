@@ -34,23 +34,37 @@ defmodule KV.BucketRegistry do
   # Server Callbacks
   #
   def init(:ok) do
-    {:ok, %{}}
+    names = %{}
+    refs = %{}   # References used to monitor bucket processes
+    {:ok, {names, refs}}
   end
 
 
-  def handle_call({:lookup, name}, _from, buckets) do
-    {:reply, Map.fetch(buckets, name), buckets}
+  def handle_call({:lookup, name}, _from, {names, refs}) do
+    {:reply, Map.fetch(names, name), {names, refs}}
   end
 
 
-  def handle_call({:create, name}, _from, buckets) do
-    if Map.has_key?(buckets, name) do
-      {:reply, :error, buckets}
+  def handle_call({:create, name}, _from, {names, refs}) do
+    if Map.has_key?(names, name) do
+      {:reply, :error, {names, refs}}
     else
-      new_bucket = KV.Bucket.start_link([])
-      {:reply, new_bucket, Map.put(buckets, name, new_bucket)}
+      {:ok, new_bucket} = KV.Bucket.start_link([])
+      ref = Process.monitor(new_bucket)
+      state_update = {Map.put(names, name, new_bucket), Map.put(refs, ref, name)}
+      {:reply, {:ok, new_bucket}, state_update}
     end
   end
+
+
+  def handle_info({:DOWN, ref, :process, _pid, _reason}, {names, refs}) do
+    # Remove dead bucket from registry
+    {name, refs} = Map.pop(refs, ref)
+    IO.puts "bucket '#{name}' is dead and removed from registry"
+    names = Map.delete(names, name)
+    {:noreply, {names, refs}}
+  end
+
 
   # What Create would look like as an async/fire-and-forget cast
   # def handle_cast({:create, name}, _from, buckets) do
